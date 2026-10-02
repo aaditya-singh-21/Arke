@@ -1,0 +1,40 @@
+source_language = "en"
+target_language = "hi"
+offline = true
+max_audio_seconds = 15.0
+max_text_chars = 1000
+max_output_seconds = 30.0
+silence_rms = 0.0001
+memory_interval_seconds = 0.1
+retain_content = false
+
+[audio]
+sample_rate = 48000
+input_device = -1
+output_device = -1
+ptt_key = "space"
+
+[asr]
+provider = "fake"
+model_id = "fake-asr"
+revision = "1"
+path = "models/fake-asr"
+device = "cpu"
+precision = "float32"
+
+[translation]
+provider = "fake"
+model_id = "fake-translation"
+revision = "1"
+path = "models/fake-translation"
+device = "cpu"
+precision = "float32"
+
+[tts]
+provider = "fake"
+model_id = "fake-tts"
+revision = "1"
+path = "models/fake-tts"
+device = "cpu"
+precision = "float32"
+

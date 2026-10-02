@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-voice-translator"
+version = "0.1.0"
+description = "Bounded offline English to Hindi utterance translation"
+requires-python = ">=3.11,<3.13"
+dependencies = ["numpy==2.2.6", "scipy==1.15.3", "psutil==7.0.0", "soundfile==0.13.1"]
+
+[project.optional-dependencies]
+audio = ["sounddevice==0.5.3"]
+test = ["pytest==8.4.2"]
+asr = ["faster-whisper==1.2.1", "ctranslate2==4.6.0", "huggingface-hub==0.34.4"]
+translation = ["torch==2.7.1", "transformers==4.51.3", "sentencepiece==0.2.0", "sacremoses==0.1.1", "huggingface-hub==0.34.4"]
+tts = ["torch==2.7.1", "transformers==4.51.3", "kokoro==0.9.4", "huggingface-hub==0.34.4"]
+
+[project.scripts]
+voice-translator = "voice_translator.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["models: requires explicitly provisioned local model assets"]
+
