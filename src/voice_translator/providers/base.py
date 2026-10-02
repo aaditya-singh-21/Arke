@@ -31,6 +31,11 @@ class LocalProvider:
             raise DeviceError(f"{self.stage}: CUDA explicitly requested but unavailable; no fallback enabled")
         return torch
 
+    def verify_torch_placement(self, dtype):
+        parameter = next(self.model.parameters())
+        if parameter.device.type != self.pc.device or parameter.dtype != dtype:
+            raise DeviceError(f"{self.stage}: runtime parameter device/dtype differs from configuration")
+
     def close(self):
         self.model = None
 

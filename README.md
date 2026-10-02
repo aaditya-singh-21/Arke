@@ -47,94 +47,67 @@ Production
 
 # Local Voice Translator — V1
 
-**Status: documentation starter; implementation has not begun.**
+**Status: V1 code and evaluation tooling implemented; local real-model diagnostics ran, but V1 acceptance remains pending.** See [validation evidence](docs/VALIDATION.md) for measured results and remaining gates.
 
-V1 will capture a short English utterance, recognize its text, translate it into Hindi, synthesize Hindi speech, and play it through headphones. The project is intended to demonstrate sound engineering, reproducible measurements, and honest tradeoffs on an RTX 3050 with 4 GB VRAM and 8 GB system RAM.
+Translate a completed English utterance into Hindi through a local, serial speech → ASR → translation → TTS pipeline. Python CLI, English → Hindi only, one speaker and one utterance at a time. File input and Windows push-to-talk are implemented. The initial candidate placement is Whisper small on GPU, IndicTrans2 distilled 200M on CPU, and Kokoro-82M stock Hindi speech on CPU. Combined diagnostic measurements failed the available-RAM margin; placement and quality remain provisional.
 
-“Real-time” in V1 means an interactive response after a completed utterance. The first version uses push-to-talk and sequential processing. It does not promise simultaneous interpretation while the speaker is still talking.
+Inference uses cached assets with explicit device/precision and fails clearly when prerequisites are missing. Model downloads are explicit setup actions. Audio capture is bounded to 15 seconds and paused during playback. There is no automatic model/device/cloud fallback.
 
-## Scope
+## Reading order
 
-| Area | V1 choice |
-|---|---|
-| Language | English -> Hindi, one direction |
-| Runtime | Python; CLI first |
-| Input/output | Microphone or WAV input; Hindi WAV and headphone playback |
-| ASR candidate | faster-whisper with Whisper `small` |
-| Translation candidate | `ai4bharat/indictrans2-en-indic-dist-200M` |
-| TTS candidate | Kokoro-82M with a Hindi voice |
-| Speech boundaries | Push-to-talk first; simple VAD after baseline |
-| Execution | Local inference; batch size 1; one active utterance |
-| Measurements | Stage timing, response latency, quality, peak RAM/VRAM, failures |
+Read [AGENTS.md](AGENTS.md), this README, [architecture](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md), and [decisions](docs/DECISIONS.md). [SETUP.md](docs/SETUP.md) contains Windows dependency/model steps; [EVALUATION.md](docs/EVALUATION.md) defines references, benchmarks, and human review; [VALIDATION.md](docs/VALIDATION.md) distinguishes measured results from pending work.
 
-The architecture and scope are selected. The models, precision settings, and device placement remain candidates until quality and memory measurements pass on the target computer.
+## Setup and deterministic checks
 
-V1 excludes Rust, cloud inference, cloud fallback, Zoom/Meet integration, virtual microphones, databases, accounts, multi-user sessions, voice cloning, Hindi -> English, training/fine-tuning, and a production deployment. Provider interfaces leave room for later cloud/hybrid operation without implementing it now.
-
-## Bundle contents and reading order
-
-```text
-voice-translator-v1/
-├── AGENTS.md
-├── README.md
-└── docs/
-    ├── ARCHITECTURE.md
-    ├── ROADMAP.md
-    └── DECISIONS.md
-```
-
-Read this file for scope, [ARCHITECTURE.md](docs/ARCHITECTURE.md) for contracts and measurements, [ROADMAP.md](docs/ROADMAP.md) for implementation order, and [DECISIONS.md](docs/DECISIONS.md) for reasons and open gates. `AGENTS.md` guides Codex work in the repository.
-
-Extract this folder into a new repository, or copy its five files into an existing project root. The source layout in the architecture doc is a plan; this archive does not contain application code or model weights.
-
-## Start implementation with Codex
-
-Use this first task:
-
-> Read AGENTS.md and the docs. Implement milestone M0 only: Python package scaffold, configuration, typed provider contracts, fake providers, a serial pipeline, and stage timing. Add the planned doctor command with clear unimplemented-provider reporting. Do not download models. Update README with only commands that actually work, and report remaining milestones.
-
-Continue through milestones in order. Introduce one real provider at a time and collect its independent benchmark before composing the full pipeline.
-
-## Setup and run expectations
-
-The first implementation task should record the actual OS, CPU, Python version, NVIDIA driver, free RAM/VRAM, and compatible model runtimes. Start with Python 3.11 as a proposed baseline, subject to dependency compatibility. Windows is the initial setup path for this project; do not claim other platforms are supported until checked.
-
-Provisioning may require internet access to install dependencies, obtain model weights, accept model repository terms, and cache tokenizer, voice, and phonemizer assets. IndicTrans2 access currently requires accepting its repository conditions. These setup steps are distinct from local inference. Normal runtime must use cached assets and must fail clearly if they are absent.
-
-The commands below define the intended CLI. **They are specifications, not runnable commands in this bundle.** The implementation must provide them or update this documented interface before declaring a milestone complete.
+Run PowerShell from the project root. The script uses `uv`, project-local Python 3.11, and ignored caches/environment.
 
 ```powershell
-# After pyproject.toml and a compatible dependency set exist:
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-
-# Planned CLI:
-.\.venv\Scripts\python.exe -m voice_translator doctor --config configs/v1.toml
-.\.venv\Scripts\python.exe -m voice_translator setup-models --config configs/v1.toml
-.\.venv\Scripts\python.exe -m voice_translator benchmark --stage asr --manifest data/eval/manifest.jsonl
-.\.venv\Scripts\python.exe -m voice_translator benchmark --stage translation --manifest data/eval/manifest.jsonl
-.\.venv\Scripts\python.exe -m voice_translator benchmark --stage tts --manifest data/eval/manifest.jsonl
-.\.venv\Scripts\python.exe -m voice_translator translate-file --input data/eval/example.wav --output artifacts/example-hi.wav --config configs/v1.toml
-.\.venv\Scripts\python.exe -m voice_translator listen --mode ptt --config configs/v1.toml
+.\scripts\bootstrap.ps1
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m voice_translator doctor --config configs/v1.toml --output artifacts/doctor.json
 ```
 
-`doctor` should report environment, audio devices, model-cache readiness, and configured device/precision without downloading or loading full models. `setup-models` should perform explicit provisioning with revision tracking. Every benchmark should emit per-item records and a summary. File translation should expose English transcript and Hindi translation and save playable audio. Push-to-talk should show ready, recording, processing, playing, and error states.
+`doctor` reports hardware/packages, free RAM/VRAM, audio devices, and configured model readiness without loading models. A driver inventory does not prove CUDA library compatibility. Tests use generated fixtures and fake/mocked providers; model checks are opt-in and never download weights.
 
-Use headphones. Pause capture during output playback in V1 to prevent the system from transcribing its own synthesized speech.
+## Runnable interfaces
 
-## What counts as a useful V1
+These commands exist. Real providers require installed dependencies, provisioned assets, and native runtime compatibility; code existence is not a passed V1 acceptance gate.
 
-V1 needs an offline file flow and a microphone flow, understandable Hindi speech, inspectable text outputs, bounded resource use, and a reproducible report from the target computer. Evaluate 30 fixed short utterances, covering ordinary conversation, Indian English accents, names, numbers, dates, negation, and some background noise.
+```powershell
+# Add each adapter and benchmark it alone before composition:
+.\scripts\bootstrap.ps1 -Asr
+.\.venv\Scripts\python.exe -m voice_translator setup-models --stage asr --config configs/v1.toml
 
-The provisional response goal is warm p50 <= 3 seconds from the end of speech to audible Hindi output for 2–6 second utterances. Report p95 even if it misses this target. Use the quality gates and measurement definitions in the architecture doc. Passing a demo once is insufficient evidence that the pipeline is stable.
+# Prepare drafts; human recordings and reference review are required:
+.\.venv\Scripts\python.exe -m voice_translator eval-init --manifest data/eval/manifest.jsonl
+.\.venv\Scripts\python.exe -m voice_translator eval-validate --manifest data/eval/manifest.jsonl
 
-Aim for total dedicated GPU usage <= 3.5 GiB and at least 1 GiB available system RAM under a documented baseline. These are planning margins, not measured capabilities. If they fail, benchmark another explicit local placement or candidate and record the tradeoff. Do not enable cloud implicitly.
+.\.venv\Scripts\python.exe -m voice_translator benchmark --stage asr --manifest data/eval/manifest.jsonl --output artifacts/asr-run
+.\.venv\Scripts\python.exe -m voice_translator benchmark --stage translation --manifest data/eval/manifest.jsonl --output artifacts/translation-run
+.\.venv\Scripts\python.exe -m voice_translator benchmark --stage tts --manifest data/eval/manifest.jsonl --output artifacts/tts-run --retain-content
+.\.venv\Scripts\python.exe -m voice_translator benchmark --stage pipeline --manifest data/eval/manifest.jsonl --output artifacts/composed-run
 
-## Portfolio deliverables
+.\.venv\Scripts\python.exe -m voice_translator translate-file --input data/eval/audio/case-01.wav --output artifacts/example-hi.wav --config configs/v1.toml
+.\.venv\Scripts\python.exe -m voice_translator listen --mode ptt --config configs/v1.toml --turns 30
+```
 
-- A short English -> Hindi demo with the computer specifications visible.
-- A documented setup and actual runnable commands.
-- Stage and end-to-end benchmark results, quality review, and representative failures.
-- A clear explanation of provider boundaries, memory placement, and deferred features.
+Translation setup requires accepting the IndicTrans2 repository conditions, authorized access, the official IndicProcessor, and review of the pinned custom model code. TTS requires cached Kokoro weights, a Hindi stock voice, and its Hindi phonemizer assets. Follow [setup instructions](docs/SETUP.md) rather than assuming the commands above install all providers.
 
-No performance claims are established by this starter bundle. Primary implementation references and candidate caveats are in [DECISIONS.md](docs/DECISIONS.md).
+For a model-free smoke test:
+
+```powershell
+.\.venv\Scripts\python.exe -m voice_translator eval-init --config configs/fake.toml --manifest data/eval/synthetic/manifest.jsonl --synthetic
+.\.venv\Scripts\python.exe -m voice_translator translate-file --config configs/fake.toml --input data/eval/synthetic/audio/case-01.wav --output artifacts/test-tone.wav
+```
+
+The fake provider outputs fixed English/Hindi text and a test tone, not translated speech. Existing evaluation manifests are preserved; benchmark directories must be empty. If a manifest already exists, reuse it rather than rerunning initialization.
+
+PTT requires a focused Windows console with key release events. Hold Space, release to translate, Esc to cancel, Q to quit. Use headphones. File output uses the actual synthesis sample rate; device resampling is explicit and recorded. Hindi console output is UTF-8. Performance metrics omit raw text/audio unless retention is enabled; console text and explicitly requested WAV export remain visible.
+
+## Acceptance and limits
+
+Use 30 fixed 2–6 second utterances with checked English and reviewed Hindi. Each configuration records cold load, first inference, three warm-ups, and 90 measured observations. Reports contain p50/p95, failures, categories, WER, real-time factors, sampled process/system/native GPU memory, and review status. Human adequacy/listening scores, critical details, a disconnected real file/microphone run, combined memory, and a 30-turn microphone session are required before calling V1 validated.
+
+Provisional goals remain p50 ≤3 s/p95 ≤5 s speech-end-to-audible response, clean WER ≤20%, ≥90% meaning/intelligibility ≥4/5, dedicated VRAM ≤3.5 GiB, and available RAM ≥1 GiB. File processing timings and PortAudio playback proxies do not establish true audible response latency. Missing or failed gates stay visible in [VALIDATION.md](docs/VALIDATION.md).
+
+V1 includes no Rust, cloud inference, servers, accounts, databases, virtual devices, Zoom/Meet integration, voice cloning, continuous interpretation, Hindi → English, training, or deployment. Optional VAD is omitted. Model weights, recordings, credentials, environments, and generated artifacts are ignored by Git. No unreviewed model or hardware result is described as accepted.

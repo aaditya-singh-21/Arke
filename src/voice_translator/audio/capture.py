@@ -90,7 +90,7 @@ class ConsoleKeys:
         self.kernel.SetConsoleMode(self.handle, self.original_mode)
 
 
-def capture_once(config, keys, token):
+def capture_once(config, keys, token, uid=None):
     import sounddevice as sd
     rate = config.audio.sample_rate
     buffer = BoundedCapture(rate, config.max_audio_seconds)
@@ -111,7 +111,7 @@ def capture_once(config, keys, token):
         if buffer.limit.is_set():
             print(f"Duration limit {config.max_audio_seconds:g}s reached; finalizing", flush=True)
         samples = buffer.finish()
-        return normalize(AudioBuffer(samples, rate, capture_start=start, capture_end=end)), keys.release_time
+        return normalize(AudioBuffer(samples, rate, utterance_id=uid or utterance_id(), capture_start=start, capture_end=end)), keys.release_time
     except sd.PortAudioError as exc:
         raise DeviceError("Capture failed; check microphone permissions, sample rate, and device ID") from exc
 
@@ -129,6 +129,12 @@ def listen(config, metrics: Path, turns=30):
     try:
         with ConsoleKeys() as keys, MemorySampler(config.memory_interval_seconds) as memory:
             pipeline.load()
+            if any(getattr(config, stage).provider != "fake" for stage in ("asr", "translation", "tts")):
+                memory.sample()
+                residency = memory.summary()
+                append_jsonl(metrics, {"type": "resident_memory_check", "session_id": session_id, "memory": residency})
+                if residency["memory_gate"] != "pass":
+                    raise DeviceError("Resident-model memory gate failed or lacks telemetry; require at least 1 GiB available RAM and at most 3.5 GiB total dedicated VRAM. Close background applications or benchmark an explicit configuration before retrying; no fallback enabled")
             print("Use headphones. Hold Space to speak; release to translate. Esc cancels; Q quits.\nREADY", flush=True)
             while len(records) < turns and not keys.quit.is_set():
                 # Require a release before accepting another press (no queued utterance).
@@ -144,7 +150,7 @@ def listen(config, metrics: Path, turns=30):
                 record = {"type": "utterance", "session_id": session_id, "utterance_id": utterance_id(), "status": "failed"}
                 try:
                     print("RECORDING", flush=True)
-                    audio, release_time = capture_once(config, keys, token)
+                    audio, release_time = capture_once(config, keys, token, record["utterance_id"])
                     record["utterance_id"] = audio.utterance_id
                     print("PROCESSING", flush=True)
                     result = pipeline.run(audio, token)
@@ -167,6 +173,9 @@ def listen(config, metrics: Path, turns=30):
                         record["manual_release_lag_seconds"] = None
                     if result.error:
                         print("ERROR:", result.error["message"], flush=True)
+                        if result.error["code"] in ("resource_exhausted", "device_error"):
+                            print("Provider device/memory failure; ending session before another allocation attempt", flush=True)
+                            keys.quit.set()
                     elif result.status != "ok":
                         print(result.status, flush=True)
                 except Exception as exc:
@@ -174,6 +183,11 @@ def listen(config, metrics: Path, turns=30):
                     record["status"] = "cancelled" if isinstance(error, Cancelled) else "failed"
                     record["error"] = {"code": error.code, "message": str(error)}
                     print("ERROR:", str(error), flush=True)
+                except KeyboardInterrupt:
+                    token.cancel()
+                    record["status"] = "cancelled"
+                    record["error"] = {"code": "cancelled", "message": "Session interrupted; active audio discarded"}
+                    raise
                 finally:
                     keys.token = None
                     records.append(record)
@@ -186,10 +200,20 @@ def listen(config, metrics: Path, turns=30):
                    "release_to_onset_proxy_seconds": distribution([x["release_to_onset_proxy_seconds"] for x in records if x.get("release_to_onset_proxy_seconds") is not None]),
                    "release_to_completion_proxy_seconds": distribution([x["release_to_completion_proxy_seconds"] for x in records if x.get("release_to_completion_proxy_seconds") is not None]),
                    "quality_status": "human_listening_pending", "audible_response_gate": "unmeasured",
-                   "stability_gate": "pass" if len(records) >= 30 and all(x["status"] == "ok" for x in records) else "pending_or_failed"}
+                   "stability_gate": ("not_applicable_fake" if metadata["fake"] else
+                                      "pass" if len(records) >= 30 and all(x["status"] == "ok" for x in records) else "pending_or_failed")}
         append_jsonl(metrics, summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0 if all(x["status"] == "ok" for x in records) else 1
+    except KeyboardInterrupt:
+        append_jsonl(metrics, {"type": "session_interrupted", "session_id": session_id,
+                              "attempted": len(records), "status": "cancelled"})
+        raise
+    except Exception as exc:
+        error = classify(exc, "microphone session")
+        append_jsonl(metrics, {"type": "session_error", "session_id": session_id,
+                              "attempted": len(records), "error": {"code": error.code, "message": str(error)}})
+        raise
     finally:
         pipeline.close()
 

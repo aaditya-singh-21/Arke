@@ -44,6 +44,8 @@ def parser():
             sub.add_argument("--allow-unreviewed", action="store_true")
         if name == "evaluate":
             sub.add_argument("--review", type=Path, required=True)
+            sub.add_argument("--translation-report", type=Path)
+            sub.add_argument("--tts-report", type=Path)
     return root
 
 
@@ -62,7 +64,9 @@ def main(argv=None):
         config = load_config(args.config)
         import os
         cache_root = Path(args.config).resolve().parent.parent / ".cache"
-        os.environ["HF_HOME"] = str(cache_root / "huggingface")
+        # Keep model/module caches local without hiding the user's existing HF login token.
+        os.environ["HF_HUB_CACHE"] = str(cache_root / "huggingface" / "hub")
+        os.environ["HF_MODULES_CACHE"] = str(cache_root / "huggingface" / "modules")
         os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
         if args.command != "setup-models":
             from .offline import offline_runtime
@@ -86,7 +90,9 @@ def main(argv=None):
                 emit(result.record(True))
                 if args.metrics:
                     append_jsonl(args.metrics, result.record(config.retain_content))
-                if result.status == "failed":
+                if result.status == "cancelled":
+                    return 130
+                if result.status != "ok":
                     return 1
                 if result.audio:
                     write_wav(args.output, result.audio)
@@ -105,6 +111,8 @@ def main(argv=None):
             from .benchmark import run_benchmark
             summary = run_benchmark(config, args)
             emit(summary)
+            if summary.get("fatal_error") and summary["fatal_error"].get("code") == "cancelled":
+                return 130
             if summary["fatal_error"] or summary["measured"]["failed_or_skipped"]:
                 return 1
         else:
@@ -115,7 +123,7 @@ def main(argv=None):
                 cases = load_manifest(args.manifest, args.stage, args.allow_unreviewed)
                 emit({"case_count": len(cases), "valid": True})
             else:
-                emit(score_review(args.manifest, args.review))
+                emit(score_review(args.manifest, args.review, args.translation_report, args.tts_report))
         return 0
     except KeyboardInterrupt:
         print("Cancelled; audio and providers cleaned up", file=sys.stderr)

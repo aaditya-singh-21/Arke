@@ -2,7 +2,7 @@
 
 Created: 2026-10-02. Status terms: **accepted** = V1 design direction; **candidate** = evaluate before selecting a default; **deferred** = outside V1; **proposed gate** = initial evaluation target requiring evidence.
 
-No model has been benchmarked by this documentation bundle. Earlier illustrative timings are not measurements and must not appear as benchmark results.
+The starter bundle established no measurements. Current implementation evidence and pending gates are recorded in `VALIDATION.md`; earlier illustrative timings must not appear as benchmark results.
 
 ## ADR-001 — Portfolio-first local inference
 
@@ -128,3 +128,27 @@ Docs updated:
 ```
 
 Primary references were checked on 2026-10-02. Recheck setup instructions when implementing; upstream dependencies, model access, and runtime requirements can change.
+
+## 2026-10-03 implementation entry — ADR-002, ADR-009, ADR-010, ADR-011
+
+Python 3.11.15 is installed in an ignored project-local environment. The deterministic foundation is exercised on Windows build 26200 / Intel i5-12500H / RTX 3050 Laptop GPU 4 GiB / 8,259,358,720 bytes system RAM. Exact tested package versions and measurements are in `VALIDATION.md` and local environment artifacts. CTranslate2 4.6.0 requires a setuptools release retaining `pkg_resources`; setuptools 75.8.2 is explicitly pinned instead of allowing an incompatible latest release.
+
+The baseline desktop has approximately 1 GiB free RAM and can fall below the provisional margin even during fake checks. No combined placement is accepted without the documented memory measurement. The initial ASR-GPU/translation-CPU/TTS-CPU candidate remains provisional. Latency/quality claims from fake or SAPI-generated diagnostic speech are not acceptance evidence.
+
+The official IndicTransToolkit documents Linux/macOS prerequisites rather than Windows support. Model access was denied during IndicTrans2 provisioning. Translation keeps the official processing boundary and the access/review gate; it does not silently substitute another translator or cloud inference. Windows compatibility, user repository acceptance, bilingual references, Hindi listening, disconnected real flows, and microphone stability remain separate requirements.
+
+The human approved implementing the rest of V1 tooling while unavailable evaluation data/review is scaffolded and marked pending. This changes the roadmap's coding order gate only where external human evidence is absent; it does not waive acceptance gates. Optional VAD is omitted as selected in the implementation plan. The runtime adds a Python socket guard and explicit cached paths; final disconnected verification is still required. Setup, architecture, roadmap, and evaluation docs are updated together.
+
+CPU ASR requested generic `int8` during its initial load probe, but CTranslate2 reported actual `int8_float32`. The adapter rejected the mismatch instead of silently accepting conversion. `configs/asr-cpu.toml` now explicitly selects supported `int8_float32`; the initial failed probe remains in local artifacts. This is a diagnostic precision correction, not acceptance of CPU placement or a model replacement.
+
+The user subsequently accepted IndicTrans2 access conditions and configured a cached login. Provisioning succeeded after keeping authentication separate from local model/module cache overrides. Official IndicTransToolkit 1.1.1 built and imported on this Windows machine. Kokoro's Misaki/espeakng-loader path also executed locally; a standalone espeak-ng executable was not required. These observations resolve installation/access prerequisites on this machine only; they do not pass human quality gates.
+
+Model configuration revisions are now pinned to the actual provisioned commits recorded in `VALIDATION.md`. IndicTrans2 uses one safetensors weight representation, both SentencePiece assets, and reviewed/checksummed custom code. PyTorch 2.7.1+cu126 provides the explicitly configured ASR native DLL directory. GPU ASR FP16 and INT8/FP16 diagnostic comparisons are recorded, while the named candidate and initial placement remain provisional. An explicit GPU-FP16 translation comparison is included because CPU translation plus CPU synthesis can exceed the provisional response budget; no runtime routing/fallback was added.
+
+## 2026-10-03 measured residency entry — ADR-009, ADR-010, ADR-012
+
+Both composed configurations completed 90/90 diagnostic file observations with no provider failures. Initial ASR GPU FP16 / translation CPU FP32 / TTS CPU FP32 processing p50/p95 was 4.359/6.080 s; peak RSS 1.690 GiB, dedicated VRAM 1.026 GiB, minimum available RAM 0.011 GiB. Explicit GPU FP16 translation reduced processing p50/p95 to 3.577/4.580 s; peak RSS 1.902 GiB, dedicated VRAM 1.427 GiB, minimum available RAM 0.017 GiB. Cold launch-to-ready was 25.136 s and 31.994 s respectively. Full evidence is in `artifacts/pipeline-initial-diagnostic` and `artifacts/pipeline-gpu-translation-diagnostic`, summarized in `VALIDATION.md`.
+
+These experiments used SAPI diagnostic English and unreviewed draft references under the current desktop workload. Both failed the ≥1 GiB available-RAM gate, although sampled VRAM remained below 3.5 GiB. Private process memory peaked above 6 GiB in both runs; low resident RSS alone does not establish adequate system headroom. File timing is not microphone-to-audible timing, and human quality/stability/offline gates remain pending. No placement is accepted and no target is relaxed.
+
+Warm microphone sessions now explicitly check sampled resident-memory margins after loading real providers and close them before capture if telemetry fails or the margins are not met, as required by the architecture. Stage/file/composed diagnostics remain available to assess candidates. The current desktop must free sufficient background RAM or measure another explicit V1 placement before microphone acceptance. This does not silently change a model, device, or precision.

@@ -1,14 +1,27 @@
 from .base import LocalProvider
 from ..types import Transcript
 from ..errors import InvalidInput, UnsupportedLanguage, DeviceError, classify
+from ..offline import offline_call
+import os
+import sys
 
 
 class FasterWhisperRecognizer(LocalProvider):
     stage = "asr"
 
+    @offline_call
     def load(self):
         self.assets()
         try:
+            self.dll_handle = None
+            self.original_path = None
+            if self.pc.device == "cuda" and self.pc.native_library_path:
+                if not self.pc.native_library_path.is_dir():
+                    raise DeviceError("Configured ASR native library directory is missing; install the selected CUDA runtime")
+                if sys.platform == "win32":
+                    self.dll_handle = os.add_dll_directory(str(self.pc.native_library_path))
+                self.original_path = os.environ.get("PATH", "")
+                os.environ["PATH"] = str(self.pc.native_library_path) + os.pathsep + self.original_path
             import ctranslate2
             from faster_whisper import WhisperModel
             supported = ctranslate2.get_supported_compute_types(self.pc.device)
@@ -19,12 +32,14 @@ class FasterWhisperRecognizer(LocalProvider):
             # Record actual native model placement/precision; fail on implicit conversion.
             actual = self.model.model
             if actual.device != self.pc.device or actual.compute_type != self.pc.precision:
+                message = f"ASR requested {self.pc.device}/{self.pc.precision}, runtime chose {actual.device}/{actual.compute_type}; configure the actual supported precision explicitly"
                 self.close()
-                raise DeviceError("ASR runtime changed device or precision; select a supported explicit configuration")
+                raise DeviceError(message)
         except Exception as exc:
             self.close()
             raise classify(exc, "load asr") from exc
 
+    @offline_call
     def transcribe(self, audio, language="en"):
         self.require_loaded()
         if language != "en":
@@ -49,4 +64,13 @@ class FasterWhisperRecognizer(LocalProvider):
             return Transcript(audio.utterance_id, transcript, "en", tuple(rows))
         except Exception as exc:
             raise classify(exc, "asr") from exc
+
+    def close(self):
+        self.model = None
+        if getattr(self, "dll_handle", None):
+            self.dll_handle.close()
+            self.dll_handle = None
+        if getattr(self, "original_path", None) is not None:
+            os.environ["PATH"] = self.original_path
+            self.original_path = None
 

@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 import os
 import socket
+from functools import wraps
 from .errors import ModelUnavailable
 
 
@@ -24,4 +25,12 @@ def offline_runtime():
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def offline_call(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with offline_runtime():
+            return function(*args, **kwargs)
+    return wrapped
 

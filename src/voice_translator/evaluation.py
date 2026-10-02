@@ -43,8 +43,9 @@ DRAFTS = [
 
 
 def init_evaluation(manifest: Path, synthetic=False):
-    if manifest.exists():
-        raise InvalidInput("Evaluation manifest already exists; refusing to overwrite references")
+    review = manifest.with_name("review-template.jsonl")
+    if manifest.exists() or review.exists():
+        raise InvalidInput("Evaluation manifest or review template already exists; refusing to overwrite references")
     manifest.parent.mkdir(parents=True, exist_ok=True)
     cases = []
     for i, (english, hindi, tags) in enumerate(DRAFTS, 1):
@@ -61,10 +62,9 @@ def init_evaluation(manifest: Path, synthetic=False):
             write_wav(manifest.parent / row["audio_path"], AudioBuffer(samples, 16000))
         cases.append(row)
     manifest.write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in cases), encoding="utf-8")
-    review = manifest.with_name("review-template.jsonl")
     review.write_text("".join(json.dumps({"case_id": x["case_id"], "reviewer": "", "meaning_score": None,
         "tts_intelligibility_score": None, "critical_details_reviewed": False, "critical_detail_errors": [],
-        "notes": "", "benchmark_run_id": ""}, ensure_ascii=False) + "\n" for x in cases), encoding="utf-8")
+        "notes": "", "translation_run_id": "", "tts_run_id": ""}, ensure_ascii=False) + "\n" for x in cases), encoding="utf-8")
     return {"manifest": str(manifest), "cases": 30, "references_reviewed": False, "synthetic": synthetic,
             "human_steps": "Record 2-6 s WAVs; verify English; review Hindi; score generated speech and critical details"}
 
@@ -133,7 +133,7 @@ def word_errors(reference: str, hypothesis: str):
             "wer": previous[-1] / len(ref) if ref else None}
 
 
-def score_review(manifest, review):
+def score_review(manifest, review, translation_report=None, tts_report=None):
     cases = read_jsonl(manifest)
     rows = read_jsonl(review)
     ids = {x["case_id"] for x in cases}
@@ -141,8 +141,29 @@ def score_review(manifest, review):
         raise InvalidInput("Review must cover all 30 cases exactly once")
     complete = all(x.get("english_reviewed") is True and x.get("hindi_reviewed") is True
                    and x.get("audio_kind") == "human_recording" for x in cases)
-    runs = {x.get("benchmark_run_id") for x in rows}
-    complete = complete and len(runs) == 1 and bool(next(iter(runs)))
+    run_ids = {}
+    for field, report_path, stages in (("translation_run_id", translation_report, ("translation", "pipeline")),
+                                      ("tts_run_id", tts_report, ("tts",))):
+        runs = {x.get(field) for x in rows}
+        run_id = next(iter(runs)) if len(runs) == 1 else None
+        run_ids[field] = run_id
+        complete = complete and bool(run_id)
+        if report_path is None:
+            complete = False
+            continue
+        try:
+            summary = json.loads(Path(report_path).read_text(encoding="utf-8"))
+            metadata = json.loads(Path(report_path).with_name("metadata.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise InvalidInput("Review benchmark report/metadata is missing or invalid") from exc
+        if summary.get("run_id") != run_id or metadata.get("run_id") != run_id:
+            raise InvalidInput("Review run IDs do not match supplied benchmark evidence")
+        if metadata.get("manifest_sha256") != hashlib.sha256(Path(manifest).read_bytes()).hexdigest():
+            raise InvalidInput("References changed since benchmark; rerun against the reviewed fixed set")
+        if metadata.get("stage") not in stages:
+            raise InvalidInput("Review evidence must use translation/composed text and independent reviewed-input TTS")
+        complete = complete and summary.get("fake") is False and summary.get("diagnostic_unreviewed") is False
+        complete = complete and summary.get("measured", {}).get("successful") == 90 and summary.get("distinct_case_count") == 30
     for row in rows:
         for field in ("meaning_score", "tts_intelligibility_score"):
             value = row.get(field)
@@ -153,7 +174,7 @@ def score_review(manifest, review):
         complete = complete and bool(row.get("reviewer")) and row.get("critical_details_reviewed") is True
         complete = complete and all(row.get(f) is not None for f in ("meaning_score", "tts_intelligibility_score"))
     report = {"status": "reviewed" if complete else "human_review_pending", "cases": 30,
-              "benchmark_run_id": next(iter(runs)) if len(runs) == 1 else None,
+              "run_ids": run_ids,
               "critical_detail_errors": [{"case_id": x["case_id"], "errors": x["critical_detail_errors"]}
                                          for x in rows if x["critical_detail_errors"]]}
     for field in ("meaning_score", "tts_intelligibility_score"):

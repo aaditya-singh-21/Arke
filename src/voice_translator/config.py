@@ -20,6 +20,7 @@ class ProviderConfig:
     voice: str = "hf_alpha"
     speed: float = 1.0
     max_phonemes: int = 500
+    native_library_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,8 @@ class Config:
         data = asdict(self)
         for stage in ("asr", "translation", "tts"):
             data[stage]["path"] = str(data[stage]["path"])
+            native = data[stage]["native_library_path"]
+            data[stage]["native_library_path"] = str(native) if native else None
         return data
 
 
@@ -71,12 +74,16 @@ def load_config(path: str | Path) -> Config:
             _keys(raw, ProviderConfig)
             # Paths are relative to project root (parent of configs/).
             raw["path"] = (path.parent.parent / raw["path"]).resolve()
+            if raw.get("native_library_path") is not None:
+                raw["native_library_path"] = (path.parent.parent / raw["native_library_path"]).resolve()
             pc = ProviderConfig(**raw)
             if pc.provider not in (allowed, "fake") or pc.device not in ("cpu", "cuda"):
                 raise InvalidConfig(f"{stage}: unsupported local provider/device")
+            if pc.provider == "fake" and (pc.device != "cpu" or pc.precision != "float32"):
+                raise InvalidConfig("Fake providers require explicit CPU/float32 placement")
             if not pc.model_id or not pc.revision:
                 raise InvalidConfig(f"{stage}: model ID and setup revision are required")
-            precisions = ("float32", "float16", "int8", "int8_float16") if stage == "asr" else ("float32", "float16")
+            precisions = ("float32", "float16", "int8", "int8_float16", "int8_float32") if stage == "asr" else ("float32", "float16")
             if pc.precision not in precisions or (pc.device == "cpu" and pc.precision in ("float16", "int8_float16")):
                 raise InvalidConfig(f"{stage}: unsupported precision for configured device")
             if stage == "tts" and pc.precision != "float32":

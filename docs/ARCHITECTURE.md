@@ -66,9 +66,11 @@ GPU placement is an experiment. Start by benchmarking each stage alone. Evaluate
 
 Keep chosen models loaded for a warm interactive session only if memory gates pass. If explicit CPU placement, smaller ASR such as `base`, or staged loading is needed, record its quality and latency cost. Staged loading adds model load time to each affected response and must appear in end-to-end timing. Catch out-of-memory errors cleanly; do not repeatedly retry an impossible allocation.
 
+The CLI enforces the sampled resident-memory gate after loading real providers for `listen`; failed or incomplete telemetry closes them before capture. File/stage/composed diagnostic commands remain available to measure explicit candidates that have not passed this gate.
+
 ## Proposed implementation layout
 
-Only the five documentation files exist in the starter archive. Create the following as milestones need them:
+The implementation follows this layout. Evaluation inputs, models, and generated artifacts remain ignored local data; setup and evaluation instructions are in `docs/SETUP.md` and `docs/EVALUATION.md`.
 
 ```text
 .
@@ -113,6 +115,16 @@ Only the five documentation files exist in the starter archive. Create the follo
 ```
 
 Configuration covers languages, model IDs/revisions/paths, devices, precision, ASR decoding, translation generation limits, TTS voice/speed, capture/output devices, endpoint limits, offline mode, and artifact retention. Keep credentials outside configuration committed to Git.
+
+## Implemented interface details
+
+The package uses synchronous Python protocols and float32 NumPy mono buffers. Translation/synthesis calls take the utterance ID alongside text. Native adapter calls are explicitly offline; setup is a separate stage-selected command. Runtime model revisions come from checksummed local provisioning receipts, not the setup branch name. Windows ASR may use an explicitly configured native DLL directory; no provider/device/precision substitution is automatic.
+
+The CLI implements `doctor`, `setup-models --stage`, `benchmark --stage asr|translation|tts|pipeline`, `translate-file`, `listen --mode ptt`, `eval-init`, `eval-validate`, and `evaluate`. Config/model paths are resolved against the project root (parent of `configs/`); evaluation audio paths resolve against the manifest directory. Unknown configuration keys fail. Candidate TOMLs have not been accepted as a combined production configuration.
+
+PTT reads press/release events from a focused Windows console. Esc requests cooperative cancellation and Q exits; native model calls finish before cancellation can be checked. Capture callbacks only copy into preallocated bounded memory. The input stream closes before processing/playback; a held key during processing cannot enqueue another utterance. File audio uses polyphase resampling, with explicit clipping of possible filtering overshoot. Output is resampled only when the configured output device rejects the actual TTS rate; the original/device rates are recorded.
+
+Benchmarks keep edge behavior separate, retain all failures, and stop repeated inference after device/OOM failure. File timing is processing-start to complete synthesized audio; PTT reports release-to-scheduled-DAC onset/completion proxies. The Windows benchmark launcher supplies a monotonic process-launch timestamp for cold startup; direct CLI calls measure cold load only. Manual release lag and true acoustic onset remain unmeasured rather than being inferred. VAD remains optional and omitted from this implementation.
 
 ## Benchmark protocol
 

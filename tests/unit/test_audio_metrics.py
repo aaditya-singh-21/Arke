@@ -44,4 +44,6 @@ def test_evaluation_never_claims_reviewed(tmp_path):
     assert score_review(manifest, tmp_path / "review-template.jsonl")["status"] == "human_review_pending"
     with pytest.raises(InvalidInput):
         init_evaluation(manifest)
+    with pytest.raises(InvalidInput):
+        init_evaluation(tmp_path / "another-manifest.jsonl")
 

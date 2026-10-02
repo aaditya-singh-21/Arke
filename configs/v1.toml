@@ -18,17 +18,18 @@ ptt_key = "space"
 [asr]
 provider = "faster-whisper"
 model_id = "Systran/faster-whisper-small"
-revision = "main"
+revision = "536b0662742c02347bc0e980a01041f333bce120"
 path = "models/asr"
 device = "cuda"
 precision = "float16"
+native_library_path = ".venv/Lib/site-packages/torch/lib"
 beam_size = 5
 cpu_threads = 4
 
 [translation]
 provider = "indictrans2"
 model_id = "ai4bharat/indictrans2-en-indic-dist-200M"
-revision = "main"
+revision = "173b94239f7c38886b2747b8d4a5db771a7e1232"
 path = "models/translation"
 device = "cpu"
 precision = "float32"
@@ -40,7 +41,7 @@ cpu_threads = 4
 [tts]
 provider = "kokoro"
 model_id = "hexgrad/Kokoro-82M"
-revision = "main"
+revision = "f3ff3571791e39611d31c381e3a41a3af07b4987"
 path = "models/tts"
 device = "cpu"
 precision = "float32"

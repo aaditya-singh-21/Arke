@@ -12,8 +12,11 @@ pytestmark = [pytest.mark.models, pytest.mark.skipif(os.environ.get("ARKE_MODEL_
 
 
 @pytest.mark.parametrize("stage", ["asr", "translation", "tts"])
-def test_provisioned_provider_offline(stage):
+def test_provisioned_provider_offline(stage, monkeypatch):
     config = load_config(os.environ.get("ARKE_MODEL_CONFIG", "configs/v1.toml"))
+    cache = Path(__file__).resolve().parents[2]/'.cache'/'huggingface'
+    monkeypatch.setenv('HF_HUB_CACHE', str(cache/'hub'))
+    monkeypatch.setenv('HF_MODULES_CACHE', str(cache/'modules'))
     with offline_runtime():
         provider = create_provider(config, stage)
         try:

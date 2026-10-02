@@ -1,5 +1,6 @@
 from time import perf_counter
 from threading import Lock
+import warnings
 import numpy as np
 from .types import AudioBuffer, UtteranceResult, Cancellation
 from .errors import InvalidInput, Cancelled, classify
@@ -32,6 +33,8 @@ class Pipeline:
                 provider.close()
             except Exception as exc:
                 errors.append({"stage": stage, "error": classify(exc, stage).code})
+        if errors:
+            warnings.warn(f"Provider cleanup failed: {errors}", RuntimeWarning, stacklevel=2)
         return errors
 
     def run(self, audio: AudioBuffer, cancellation: Cancellation | None = None) -> UtteranceResult:

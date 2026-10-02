@@ -33,11 +33,14 @@ def test_network_guard_restores_environment():
 
 def test_provision_receipt_integrity_and_review(tmp_path):
     cfg = load_config(ROOT / "configs/v1.toml")
-    pc = replace(cfg.translation, path=tmp_path)
-    file = tmp_path / "model.bin"
-    file.write_bytes(b"fixture")
+    pc = replace(cfg.translation, path=tmp_path, revision="a" * 40)
+    names = ("config.json", "tokenizer_config.json", "configuration_indictrans.py", "modeling_indictrans.py",
+             "tokenization_indictrans.py", "dict.SRC.json", "dict.TGT.json", "model.SRC", "model.TGT", "model.safetensors")
+    for name in names:
+        (tmp_path / name).write_bytes(b"fixture")
+    file = tmp_path / "config.json"
     receipt = {"stage": "translation", "model_id": pc.model_id, "revision": "a" * 40,
-               "custom_code_reviewed": False, "files": {"model.bin": sha256(file)}}
+               "custom_code_reviewed": False, "files": {name: sha256(tmp_path / name) for name in names}}
     path = tmp_path / "provisioned.json"
     path.write_text(json.dumps(receipt))
     with pytest.raises(ModelUnavailable):

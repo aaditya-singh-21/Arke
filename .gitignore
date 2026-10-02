@@ -1,4 +1,5 @@
 .venv/
+.venv-*/
 .python/
 .cache/
 models/
@@ -12,6 +13,9 @@ __pycache__/
 build/
 dist/
 .env
+.env.*
+credentials/
+.secrets/
 *.wav
 *.mp3
 *.mp4

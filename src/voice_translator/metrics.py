@@ -84,7 +84,9 @@ class MemorySampler:
         gpu = gpu_inventory()
         if gpu["error"]:
             self.errors.add(gpu["error"])
-        self.samples.append({"time": stamp, "rss": psutil.Process().memory_info().rss,
+        process_memory = psutil.Process().memory_info()
+        self.samples.append({"time": stamp, "rss": process_memory.rss,
+                             "private": getattr(process_memory, "private", None), "vms": process_memory.vms,
                              "ram_total": ram.total, "ram_available": ram.available,
                              "gpu_used": max((x["used_bytes"] for x in gpu["devices"]), default=None)})
 
@@ -109,14 +111,16 @@ class MemorySampler:
             self.errors.add("sampler_shutdown_timeout")
 
     def summary(self) -> dict:
+        samples = sorted(self.samples, key=lambda sample: sample["time"])
         def peak(name):
-            return max((s[name] for s in self.samples if s[name] is not None), default=None)
-        available = min((s["ram_available"] for s in self.samples), default=None)
+            return max((s[name] for s in samples if s[name] is not None), default=None)
+        available = min((s["ram_available"] for s in samples), default=None)
         gpu_peak = peak("gpu_used")
-        intervals = [b["time"] - a["time"] for a, b in zip(self.samples, self.samples[1:])]
+        intervals = [b["time"] - a["time"] for a, b in zip(samples, samples[1:])]
         complete = bool(self.samples) and gpu_peak is not None and not self.errors
         return {"sample_count": len(self.samples), "requested_interval_seconds": self.interval,
                 "actual_interval_seconds": distribution(intervals), "peak_rss_bytes": peak("rss"),
+                "peak_private_bytes": peak("private"), "peak_vms_bytes": peak("vms"),
                 "total_ram_bytes": peak("ram_total"), "minimum_available_ram_bytes": available,
                 "peak_total_dedicated_vram_bytes": gpu_peak, "errors": sorted(self.errors),
                 "memory_gate": ("pass" if gpu_peak <= 3.5 * 1024**3 and available >= 1024**3 else "fail") if complete else "unverified",

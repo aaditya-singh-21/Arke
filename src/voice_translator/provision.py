@@ -27,6 +27,14 @@ def validate_assets(pc, stage):
             raise ModelUnavailable("IndicTrans2 custom code must be reviewed at its pinned revision before loading")
         if not receipt["files"]:
             raise ValueError()
+        required = {"asr": {"model.bin", "config.json", "tokenizer.json"},
+                    "translation": {"config.json", "tokenizer_config.json", "configuration_indictrans.py",
+                                    "modeling_indictrans.py", "tokenization_indictrans.py", "dict.SRC.json", "dict.TGT.json", "model.SRC", "model.TGT"},
+                    "tts": {"config.json", "kokoro-v1_0.pth", f"voices/{pc.voice}.pt"}}[stage]
+        if not required.issubset(receipt["files"]):
+            raise ModelUnavailable(f"{stage}: required assets missing from provisioning receipt; rerun setup-models")
+        if stage == "translation" and not any(name.endswith((".safetensors", ".bin")) for name in receipt["files"]):
+            raise ModelUnavailable("translation: provisioned weights are missing")
         for relative, expected in receipt["files"].items():
             path = (pc.path / relative).resolve()
             if not path.is_relative_to(pc.path.resolve()) or not path.is_file() or sha256(path) != expected:
@@ -50,7 +58,9 @@ def setup_models(config, stage, accept_reviewed_code=False):
     pc.path.mkdir(parents=True, exist_ok=True)
     # Resume interrupted setup at the same revision; never silently replace a pinned receipt.
     receipt_path = pc.path / "provisioned.json"
-    previous = json.loads(receipt_path.read_text(encoding="utf-8")) if receipt_path.exists() else None
+    plan_path = pc.path / "setup-plan.json"
+    previous = json.loads(receipt_path.read_text(encoding="utf-8")) if receipt_path.exists() else (
+        json.loads(plan_path.read_text(encoding="utf-8")) if plan_path.exists() else None)
     if previous:
         if previous["model_id"] != pc.model_id or (re.fullmatch(r"[a-f0-9]{40}", pc.revision) and pc.revision != previous["revision"]):
             raise InvalidConfig("Provision into a new model path when changing model ID or revision")
@@ -62,16 +72,21 @@ def setup_models(config, stage, accept_reviewed_code=False):
             raise ModelUnavailable("Accept IndicTrans2 repository conditions using your own Hugging Face account, then set HF_TOKEN outside Git") from exc
     if not revision or not re.fullmatch(r"[a-f0-9]{40}", revision):
         raise ModelUnavailable("Could not resolve an immutable model revision")
+    plan_path.write_text(json.dumps({"model_id": pc.model_id, "stage": stage, "revision": revision}, indent=2), encoding="utf-8")
     patterns = {"asr": ["model.bin", "config.json", "tokenizer.json", "vocabulary.*", "preprocessor_config.json"],
-        "translation": ["*.json", "*.py", "*.spm", "*.model", "*.txt", "*.safetensors", "pytorch_model*.bin"],
+        "translation": ["*.json", "*.py", "*.spm", "*.model", "model.SRC", "model.TGT", "*.txt", "*.safetensors", "pytorch_model*.bin"],
         "tts": ["config.json", "kokoro-v1_0.pth", f"voices/{pc.voice}.pt"]}[stage]
+    if stage == "translation":
+        filenames = {item.rfilename for item in HfApi().model_info(pc.model_id, revision=revision).siblings}
+        if any(name.endswith(".safetensors") for name in filenames):
+            patterns.remove("pytorch_model*.bin")
     try:
         snapshot_download(pc.model_id, revision=revision, local_dir=str(pc.path), allow_patterns=patterns,
                           max_workers=1)
     except GatedRepoError as exc:
         raise ModelUnavailable("Model access denied: accept repository conditions and supply HF_TOKEN for setup only") from exc
     files = {str(p.relative_to(pc.path)).replace("\\", "/"): sha256(p)
-             for p in pc.path.rglob("*") if p.is_file() and ".cache" not in p.parts and p.name != "provisioned.json"}
+             for p in pc.path.rglob("*") if p.is_file() and ".cache" not in p.parts and p.name not in ("provisioned.json", "setup-plan.json")}
     reviewed = stage != "translation" or accept_reviewed_code or bool(previous and previous.get("custom_code_reviewed"))
     receipt = {"stage": stage, "model_id": pc.model_id, "revision": revision, "requested_revision": pc.revision,
                "files": files, "custom_code_reviewed": reviewed,

@@ -98,3 +98,20 @@ def test_invalid_samples():
         with pytest.raises(InvalidInput):
             AudioBuffer(data, 16000)
 
+
+def test_load_failure_rolls_back_and_cleanup_errors_are_visible(config):
+    pipeline = create_pipeline(config)
+    def fail_load():
+        pipeline.translator.loaded = True
+        raise MemoryError()
+    pipeline.translator.load = fail_load
+    with pytest.raises(ResourceExhausted):
+        pipeline.load()
+    assert all(not provider.loaded for _, provider in pipeline.providers())
+    def fail_close():
+        raise RuntimeError('fixture cleanup error')
+    pipeline.tts.close = fail_close
+    with pytest.warns(RuntimeWarning, match='Provider cleanup failed'):
+        errors = pipeline.close()
+    assert errors == [{'stage': 'tts', 'error': 'provider_error'}]
+

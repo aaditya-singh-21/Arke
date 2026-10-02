@@ -4,7 +4,7 @@
 
 Build a portfolio-first, local-first voice translator for an RTX 3050 with 4 GB VRAM and a computer with 8 GB RAM. V1 translates one speaker's short English utterance into Hindi speech through headphones.
 
-This starter bundle contains documentation only. Source code, dependencies, model downloads, commands, and benchmark results still need to be implemented. Never describe planned functionality as working functionality.
+The V1 application, provider adapters, and evaluation tooling are implemented. Consult `docs/VALIDATION.md` for measured checks and pending human/hardware acceptance gates. Never describe planned or unvalidated functionality as working functionality.
 
 Read `README.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and `docs/DECISIONS.md` before implementing. Follow the current human request when it changes these plans, and update the affected docs.
 

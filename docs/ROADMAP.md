@@ -2,6 +2,23 @@
 
 Implement milestones in order. Complete the listed evidence before adding the next layer. V1 is the first portfolio milestone; later stages are direction, not promises of delivery dates or guaranteed performance.
 
+## Implementation status (2026-10-03)
+
+The human request authorizes completing V1 code while unavailable human references/listening remain pending. The implementation proceeds through the layers in order; code existence does not complete a milestone's acceptance evidence. See `VALIDATION.md` for measured results and prerequisites.
+
+| Milestone | Code/tooling | Acceptance evidence |
+|---|---|---|
+| M0 | Implemented; Python 3.11 foundation and fake CLI exercised | Deterministic checks pass; full native adapter compatibility assessed separately |
+| M1 | Implemented; 30 draft cases, review forms, benchmark/memory harness | Fake 90-observation run exercised; human recordings/references pending |
+| M2 | Implemented; faster-whisper adapter and pinned provisioning | Stage measurements recorded as diagnostics when synthetic speech is used; human WER pending |
+| M3 | Implemented; official processor boundary and reviewed-code gate | Access resolved; processor runs on Windows; CPU/GPU diagnostics recorded; bilingual review pending |
+| M4 | Implemented; bounded stock Hindi Kokoro adapter | Real CPU synthesis benchmark recorded; human listening pending |
+| M5 | Implemented; file orchestration and offline asset checks | Real composition runs with cached assets and network guard; available-RAM margin failed; physical disconnection pending |
+| M6 | Implemented; bounded Windows PTT, cancellation, playback proxies | Human microphone/listening and 30-turn stability session pending |
+| M7 | Setup/evaluation/validation documentation implemented | Demo and final accepted placement/quality decisions pending; optional VAD omitted |
+
+V1 is not yet declared validated. No V2 or portfolio-extension features are implemented.
+
 ## M0 — Scaffold and execution contracts
 
 Create the Python package, `pyproject.toml`, `.gitignore`, configuration, typed provider interfaces/data objects, fake providers, serial pipeline, structured errors, and utterance timing. Implement a lightweight `doctor` command. Record the target environment and decide a compatible Python/runtime dependency baseline.

@@ -2,11 +2,13 @@ import numpy as np
 from .base import LocalProvider
 from ..types import SynthesizedAudio
 from ..errors import InvalidInput, UnsupportedLanguage, classify
+from ..offline import offline_call
 
 
 class KokoroSynthesizer(LocalProvider):
     stage = "tts"
 
+    @offline_call
     def load(self):
         self.assets()
         try:
@@ -15,12 +17,14 @@ class KokoroSynthesizer(LocalProvider):
             from misaki.espeak import EspeakG2P
             self.model = KModel(repo_id=self.pc.model_id, config=str(self.pc.path / "config.json"),
                                 model=str(self.pc.path / "kokoro-v1_0.pth")).to(self.pc.device).eval()
+            self.verify_torch_placement(torch.float32)
             self.voice = torch.load(self.pc.path / "voices" / f"{self.pc.voice}.pt", weights_only=True, map_location=self.pc.device)
             self.g2p = EspeakG2P(language="hi")
         except Exception as exc:
             self.close()
             raise classify(exc, "load tts") from exc
 
+    @offline_call
     def synthesize(self, text, utterance_id, language="hi"):
         self.require_loaded()
         if language != "hi":

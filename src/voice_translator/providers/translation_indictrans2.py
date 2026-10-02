@@ -1,11 +1,13 @@
 from .base import LocalProvider
 from ..types import Translation
 from ..errors import InvalidInput, ModelUnavailable, UnsupportedLanguage, classify
+from ..offline import offline_call
 
 
 class IndicTransTranslator(LocalProvider):
     stage = "translation"
 
+    @offline_call
     def load(self):
         self.assets()
         try:
@@ -20,10 +22,12 @@ class IndicTransTranslator(LocalProvider):
             dtype = torch.float32 if self.pc.precision == "float32" else torch.float16
             self.model = AutoModelForSeq2SeqLM.from_pretrained(str(self.pc.path), trust_remote_code=True,
                 local_files_only=True, torch_dtype=dtype, attn_implementation="eager").to(self.pc.device).eval()
+            self.verify_torch_placement(dtype)
         except Exception as exc:
             self.close()
             raise classify(exc, "load translation") from exc
 
+    @offline_call
     def translate(self, text, utterance_id, source="en", target="hi"):
         self.require_loaded()
         if (source, target) != ("en", "hi"):
@@ -42,6 +46,8 @@ class IndicTransTranslator(LocalProvider):
             if self.pc.device == "cuda":
                 torch.cuda.synchronize()
             ids = output[0].tolist()
+            if len(ids) - 1 >= self.pc.max_new_tokens:
+                raise InvalidInput("Translation reached generation bound; refusing potentially truncated output")
             eos = self.model.generation_config.eos_token_id
             eos = eos if isinstance(eos, list) else [eos]
             if not any(i in eos for i in ids[1:]):
