@@ -1,0 +1,53 @@
+# CPU/GPU placement experiment; defaults unchanged, acceptance pending.
+# Candidate placement, not an accepted quality/performance configuration.
+source_language = "en"
+target_language = "hi"
+offline = true
+max_audio_seconds = 15.0
+max_text_chars = 1000
+max_output_seconds = 30.0
+silence_rms = 0.0001
+memory_interval_seconds = 0.1
+retain_content = false
+
+[audio]
+sample_rate = 48000
+input_device = -1
+output_device = -1
+ptt_key = "space"
+
+[asr]
+provider = "faster-whisper"
+model_id = "Systran/faster-whisper-small"
+revision = "536b0662742c02347bc0e980a01041f333bce120"
+path = "models/asr"
+device = "cuda"
+precision = "float16"
+native_library_path = ".venv/Lib/site-packages/torch/lib"
+beam_size = 5
+cpu_threads = 4
+
+[translation]
+provider = "indictrans2"
+model_id = "ai4bharat/indictrans2-en-indic-dist-200M"
+revision = "173b94239f7c38886b2747b8d4a5db771a7e1232"
+path = "models/translation"
+device = "cuda"
+precision = "float32"
+max_input_tokens = 256
+max_new_tokens = 256
+beam_size = 5
+cpu_threads = 4
+
+[tts]
+provider = "kokoro"
+model_id = "hexgrad/Kokoro-82M"
+revision = "f3ff3571791e39611d31c381e3a41a3af07b4987"
+path = "models/tts"
+device = "cuda"
+precision = "float32"
+voice = "hf_alpha"
+speed = 1.0
+max_phonemes = 500
+cpu_threads = 4
+

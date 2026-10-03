@@ -49,6 +49,18 @@ Production
 
 **Status: V1 code and evaluation tooling implemented; local real-model diagnostics ran, but V1 acceptance remains pending.** See [validation evidence](docs/VALIDATION.md) for measured results and remaining gates.
 
+**Current RAM policy:** [ADR-014](docs/DECISIONS.md#adr-014--advisory-ram-reserve-and-measured-session-stability) makes the 1 GiB available-RAM reserve advisory. A lower reading does not establish that the app will crash; acceptance depends on measured execution, memory/latency trends and the 30-turn microphone stability test. `listen` now warns and continues on low RAM, checking memory after loading and each utterance. Excess dedicated VRAM, missing telemetry and actual device/OOM failures remain explicit blockers. New reports separate the RAM advisory from VRAM/telemetry status; historical RAM-gate failures retain their original meaning. Models, placements and defaults are unchanged.
+
+The [CPU/GPU placement evaluation](docs/PLACEMENT_EVALUATION.md) records additional fixed-set diagnostics. GPU synthesis and translation improved file processing latency, but every tested placement failed the available-RAM margin. `configs/gpu-tts.toml`, `configs/all-gpu-fp32.toml`, and `configs/all-gpu.toml` are explicit experiment configurations; `configs/v1.toml` remains the provisional default.
+
+The [loading investigation](docs/LOADING_EVALUATION.md) found removable Kokoro CPU tensor storage and tested direct GPU loading/checkpoint mapping. Two combined diagnostic runs completed 90/90 observations each, with warm processing p50/p95 about 0.48/0.60 s and 2.339 GiB peak dedicated VRAM, but first-call available RAM still fell to about 315–320 MiB. These process-local experiments are not applied to the application or accepted as a microphone configuration.
+
+The [staging and precision evaluation](docs/STAGING_EVALUATION.md) tested initialization order, one-provider residency, CPU recognition, compact GPU precision and CTranslate2 allocator settings. All five completed 90/90 diagnostic observations, but none passed the full-run RAM margin. Reloading every stage raised processing p50/p95 to 5.77/6.44 s. These are investigation results; application defaults remain unchanged.
+
+The [CPU quantization investigation](docs/CPU_QUANTIZATION_EVALUATION.md) records explicit derived-weight provisioning, cached loading, and failed probes. The first completed all-CPU quantized/cached benchmark using the CUDA-enabled PyTorch build succeeded on 90/90 calls but measured processing p50/p95 5.98/7.98 s and only 202.5 MiB minimum available RAM. Its experimental loader is not an accepted application configuration.
+
+After the human closed unnecessary apps, [two idle-desktop follow-ups](docs/IDLE_BASELINE_EVALUATION.md) of the strongest GPU loader each completed 90/90 calls at processing p50/p95 about 0.48–0.50/0.59–0.60 s, but both RAM gates failed. The [optimization goal review](docs/OPTIMIZATION_REVIEW.md) retains the documented targets and explains why file timing and synthetic diagnostics cannot establish microphone or quality acceptance. No default or memory guard was changed.
+
 Translate a completed English utterance into Hindi through a local, serial speech → ASR → translation → TTS pipeline. Python CLI, English → Hindi only, one speaker and one utterance at a time. File input and Windows push-to-talk are implemented. The initial candidate placement is Whisper small on GPU, IndicTrans2 distilled 200M on CPU, and Kokoro-82M stock Hindi speech on CPU. Combined diagnostic measurements failed the available-RAM margin; placement and quality remain provisional.
 
 Inference uses cached assets with explicit device/precision and fails clearly when prerequisites are missing. Model downloads are explicit setup actions. Audio capture is bounded to 15 seconds and paused during playback. There is no automatic model/device/cloud fallback.
@@ -56,6 +68,8 @@ Inference uses cached assets with explicit device/precision and fails clearly wh
 ## Reading order
 
 Read [AGENTS.md](AGENTS.md), this README, [architecture](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md), and [decisions](docs/DECISIONS.md). [SETUP.md](docs/SETUP.md) contains Windows dependency/model steps; [EVALUATION.md](docs/EVALUATION.md) defines references, benchmarks, and human review; [VALIDATION.md](docs/VALIDATION.md) distinguishes measured results from pending work.
+
+For a complete code walkthrough, read [the implementation guide](docs/IMPLEMENTATION_GUIDE.md). It maps the directory structure, every application/configuration/test/script file, command flows, model adapters, audio lifecycle, offline controls, measurement policy, and local experiment boundaries.
 
 ## Setup and deterministic checks
 
@@ -108,6 +122,6 @@ PTT requires a focused Windows console with key release events. Hold Space, rele
 
 Use 30 fixed 2–6 second utterances with checked English and reviewed Hindi. Each configuration records cold load, first inference, three warm-ups, and 90 measured observations. Reports contain p50/p95, failures, categories, WER, real-time factors, sampled process/system/native GPU memory, and review status. Human adequacy/listening scores, critical details, a disconnected real file/microphone run, combined memory, and a 30-turn microphone session are required before calling V1 validated.
 
-Provisional goals remain p50 ≤3 s/p95 ≤5 s speech-end-to-audible response, clean WER ≤20%, ≥90% meaning/intelligibility ≥4/5, dedicated VRAM ≤3.5 GiB, and available RAM ≥1 GiB. File processing timings and PortAudio playback proxies do not establish true audible response latency. Missing or failed gates stay visible in [VALIDATION.md](docs/VALIDATION.md).
+Provisional goals remain p50 ≤3 s/p95 ≤5 s speech-end-to-audible response, clean WER ≤20%, ≥90% meaning/intelligibility ≥4/5, dedicated VRAM ≤3.5 GiB, and no crashes/OOM across 30 microphone turns. Available RAM below 1 GiB is an advisory warning; continue recording it and examining session memory/latency trends. File processing timings and PortAudio playback proxies do not establish true audible response latency. Missing or failed gates stay visible in [VALIDATION.md](docs/VALIDATION.md).
 
 V1 includes no Rust, cloud inference, servers, accounts, databases, virtual devices, Zoom/Meet integration, voice cloning, continuous interpretation, Hindi → English, training, or deployment. Optional VAD is omitted. Model weights, recordings, credentials, environments, and generated artifacts are ignored by Git. No unreviewed model or hardware result is described as accepted.

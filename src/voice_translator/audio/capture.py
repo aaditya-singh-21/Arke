@@ -116,6 +116,18 @@ def capture_once(config, keys, token, uid=None):
         raise DeviceError("Capture failed; check microphone permissions, sample rate, and device ID") from exc
 
 
+def memory_gate_message(residency):
+    def mib(key):
+        value = residency.get(key)
+        return 'unavailable' if value is None else f'{value/1048576:.1f} MiB'
+    return (f"Resident-model memory gate {residency['memory_gate']}: "
+            f"minimum available RAM {mib('minimum_available_ram_bytes')} (advisory reserve 1024 MiB); "
+            f"peak total dedicated VRAM {mib('peak_total_dedicated_vram_bytes')} (required <=3584 MiB); "
+            f"telemetry errors {residency.get('errors', [])}. "
+            "Measurements include model loading. Windows, the application, and model runtimes all use RAM, even with no other visible apps. "
+            "Check VRAM usage and telemetry before retrying; low RAM alone does not block capture. No fallback enabled")
+
+
 def listen(config, metrics: Path, turns=30):
     if turns < 1:
         raise InvalidInput("--turns must be positive")
@@ -126,15 +138,26 @@ def listen(config, metrics: Path, turns=30):
                 "configuration": config.metadata(), "fake": any(getattr(config, s).provider == "fake" for s in ("asr", "translation", "tts")),
                 "manual_release_lag": None, "acoustic_onset": None}
     append_jsonl(metrics, metadata)
+    real_providers = any(getattr(config, stage).provider != "fake" for stage in ("asr", "translation", "tts"))
+    ram_warning_emitted = False
+    def check_memory(memory, phase):
+        nonlocal ram_warning_emitted
+        memory.sample()
+        residency = memory.summary()
+        append_jsonl(metrics, {"type": "resident_memory_check", "session_id": session_id,
+                              "phase": phase, "attempted": len(records), "memory": residency})
+        if residency.get("ram_advisory") == "warning" and not ram_warning_emitted:
+            print(f"WARNING: Low available RAM ({residency['minimum_available_ram_bytes']/1048576:.1f} MiB minimum); "
+                  "the 1024 MiB reserve is advisory. Continuing with memory/latency telemetry; "
+                  "session stability still requires validation.", flush=True)
+            ram_warning_emitted = True
+        if residency["memory_gate"] != "pass":
+            raise DeviceError(memory_gate_message(residency))
     try:
         with ConsoleKeys() as keys, MemorySampler(config.memory_interval_seconds) as memory:
             pipeline.load()
-            if any(getattr(config, stage).provider != "fake" for stage in ("asr", "translation", "tts")):
-                memory.sample()
-                residency = memory.summary()
-                append_jsonl(metrics, {"type": "resident_memory_check", "session_id": session_id, "memory": residency})
-                if residency["memory_gate"] != "pass":
-                    raise DeviceError("Resident-model memory gate failed or lacks telemetry; require at least 1 GiB available RAM and at most 3.5 GiB total dedicated VRAM. Close background applications or benchmark an explicit configuration before retrying; no fallback enabled")
+            if real_providers:
+                check_memory(memory, "models_loaded")
             print("Use headphones. Hold Space to speak; release to translate. Esc cancels; Q quits.\nREADY", flush=True)
             while len(records) < turns and not keys.quit.is_set():
                 # Require a release before accepting another press (no queued utterance).
@@ -183,6 +206,8 @@ def listen(config, metrics: Path, turns=30):
                     record["status"] = "cancelled" if isinstance(error, Cancelled) else "failed"
                     record["error"] = {"code": error.code, "message": str(error)}
                     print("ERROR:", str(error), flush=True)
+                    if error.code in ("resource_exhausted", "device_error"):
+                        keys.quit.set()
                 except KeyboardInterrupt:
                     token.cancel()
                     record["status"] = "cancelled"
@@ -193,6 +218,8 @@ def listen(config, metrics: Path, turns=30):
                     records.append(record)
                     append_jsonl(metrics, record)
                     print("READY", flush=True)
+                if real_providers:
+                    check_memory(memory, "after_utterance")
             if keys.error:
                 raise keys.error
         summary = {"type": "summary", "session_id": session_id, "attempted": len(records),
@@ -200,8 +227,10 @@ def listen(config, metrics: Path, turns=30):
                    "release_to_onset_proxy_seconds": distribution([x["release_to_onset_proxy_seconds"] for x in records if x.get("release_to_onset_proxy_seconds") is not None]),
                    "release_to_completion_proxy_seconds": distribution([x["release_to_completion_proxy_seconds"] for x in records if x.get("release_to_completion_proxy_seconds") is not None]),
                    "quality_status": "human_listening_pending", "audible_response_gate": "unmeasured",
-                   "stability_gate": ("not_applicable_fake" if metadata["fake"] else
-                                      "pass" if len(records) >= 30 and all(x["status"] == "ok" for x in records) else "pending_or_failed")}
+                   "execution_gate": ("not_applicable_fake" if metadata["fake"] else
+                                      "pass" if len(records) >= 30 and all(x["status"] == "ok" for x in records) else "pending_or_failed"),
+                   "stability_gate": ("not_applicable_fake" if metadata["fake"] else "pending_memory_latency_review"),
+                   "stability_note": "Execution outcomes alone do not establish stability; review session memory and latency trends."}
         append_jsonl(metrics, summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0 if all(x["status"] == "ok" for x in records) else 1

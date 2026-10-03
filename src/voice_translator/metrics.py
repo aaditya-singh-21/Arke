@@ -8,6 +8,9 @@ import platform
 import subprocess
 import sys
 
+RAM_ADVISORY_BYTES = 1024**3
+VRAM_LIMIT_BYTES = int(3.5 * 1024**3)
+
 
 def gpu_inventory() -> dict:
     try:
@@ -117,12 +120,18 @@ class MemorySampler:
         available = min((s["ram_available"] for s in samples), default=None)
         gpu_peak = peak("gpu_used")
         intervals = [b["time"] - a["time"] for a, b in zip(samples, samples[1:])]
-        complete = bool(self.samples) and gpu_peak is not None and not self.errors
+        complete = bool(samples) and not self.errors and all(
+            s['ram_available'] is not None and s['gpu_used'] is not None for s in samples)
+        vram_gate = ('pass' if gpu_peak <= VRAM_LIMIT_BYTES else 'fail') if gpu_peak is not None else 'unverified'
+        ram_advisory = ('warning' if available < RAM_ADVISORY_BYTES else 'ok') if available is not None else 'unverified'
         return {"sample_count": len(self.samples), "requested_interval_seconds": self.interval,
                 "actual_interval_seconds": distribution(intervals), "peak_rss_bytes": peak("rss"),
                 "peak_private_bytes": peak("private"), "peak_vms_bytes": peak("vms"),
                 "total_ram_bytes": peak("ram_total"), "minimum_available_ram_bytes": available,
                 "peak_total_dedicated_vram_bytes": gpu_peak, "errors": sorted(self.errors),
-                "memory_gate": ("pass" if gpu_peak <= 3.5 * 1024**3 and available >= 1024**3 else "fail") if complete else "unverified",
+                "memory_policy": "adr-014-ram-advisory", "telemetry_status": "complete" if complete else "unverified",
+                "vram_gate": vram_gate, "ram_advisory": ram_advisory,
+                "ram_advisory_threshold_bytes": RAM_ADVISORY_BYTES, "vram_limit_bytes": VRAM_LIMIT_BYTES,
+                "memory_gate": vram_gate if complete else "unverified",
                 "limitations": "Sampled peaks may miss brief allocations; device-wide VRAM includes background applications. WDDM process GPU accounting is not assumed."}
 

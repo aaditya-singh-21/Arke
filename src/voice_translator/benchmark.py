@@ -48,6 +48,10 @@ def render_summary(summary):
     interval = memory["actual_interval_seconds"]
     lines.extend(["", f"Memory gate: **{memory['memory_gate']}**. Nominal sample interval {memory['requested_interval_seconds']} s; actual p50/p95 {number(interval['p50'])}/{number(interval['p95'])} s.",
                   memory["limitations"], "", f"Quality status: **{summary['quality_status']}**."])
+    if memory.get('memory_policy') == 'adr-014-ram-advisory':
+        lines.extend(["", f"Memory policy: {memory['memory_policy']}; telemetry: {memory['telemetry_status']}; VRAM gate: {memory['vram_gate']}.",
+                      f"RAM advisory: **{memory['ram_advisory']}** (reserve {number(memory['ram_advisory_threshold_bytes'], 1024**3)} GiB). Low RAM alone does not fail the memory gate.",
+                      "A passed memory gate is not sustained-session stability or human quality acceptance."])
     if measured.get("wer") is not None:
         lines.append(f"WER: {measured['wer']:.3%}; diagnostic/fake inputs do not establish the human accuracy gate.")
     for key in ("asr_rtf", "tts_rtf"):

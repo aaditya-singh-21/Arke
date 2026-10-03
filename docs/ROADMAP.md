@@ -13,11 +13,13 @@ The human request authorizes completing V1 code while unavailable human referenc
 | M2 | Implemented; faster-whisper adapter and pinned provisioning | Stage measurements recorded as diagnostics when synthetic speech is used; human WER pending |
 | M3 | Implemented; official processor boundary and reviewed-code gate | Access resolved; processor runs on Windows; CPU/GPU diagnostics recorded; bilingual review pending |
 | M4 | Implemented; bounded stock Hindi Kokoro adapter | Real CPU synthesis benchmark recorded; human listening pending |
-| M5 | Implemented; file orchestration and offline asset checks | Real composition runs with cached assets and network guard; available-RAM margin failed; physical disconnection pending |
+| M5 | Implemented; file orchestration and offline asset checks | Real composition diagnostics ran; legacy RAM-margin failures retained as historical evidence; RAM advisory per ADR-014; physical disconnection pending |
 | M6 | Implemented; bounded Windows PTT, cancellation, playback proxies | Human microphone/listening and 30-turn stability session pending |
 | M7 | Setup/evaluation/validation documentation implemented | Demo and final accepted placement/quality decisions pending; optional VAD omitted |
 
 V1 is not yet declared validated. No V2 or portfolio-extension features are implemented.
+
+ADR-014 runtime/reporting is implemented: the RAM advisory is separate from VRAM/telemetry status, low RAM alone no longer rejects capture, and focused deterministic checks cover continuation, failure and cleanup. Provider placements and models are unchanged. Human quality, session memory/latency trend review and 30-turn microphone acceptance remain pending.
 
 ## M0 — Scaffold and execution contracts
 
@@ -53,9 +55,9 @@ Done when a Hindi listener can understand the output, the TTS quality gate is re
 
 Connect the accepted adapters: WAV -> English transcript -> Hindi text -> Hindi WAV. Expose intermediate text and per-stage metrics. Run the fixed set through the real pipeline with the intended resident model arrangement. Verify cached execution while disconnected and graceful failures on absent assets.
 
-Done when output is playable, all three outputs share an utterance ID, quality errors can be traced to a stage, and combined peak memory stays within the chosen headroom. Stage-only success does not prove that combined residency fits.
+Done when output is playable, all three outputs share an utterance ID, quality errors can be traced to a stage, combined memory is measured with complete telemetry, the dedicated-VRAM ceiling is met, and actual failures are handled explicitly. RAM below 1 GiB is advisory under ADR-014, not a standalone rejection. Stage-only success does not establish combined or sustained-session stability.
 
-If combined memory fails, benchmark explicit CPU placement, smaller ASR, supported lower precision, or staged loading. Record the changed end-to-end latency and quality. Select a stable local configuration before microphone integration.
+If actual memory failures, excessive VRAM, sustained unexplained growth or material latency degradation occur, benchmark explicit CPU placement, smaller ASR, supported lower precision, or staged loading. Record the changed end-to-end latency and quality. Low available RAM alone does not require another model or placement. Use a documented candidate for microphone validation; accept its stability only after the session evidence exists.
 
 ## M6 — Push-to-talk microphone demo
 

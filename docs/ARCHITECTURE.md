@@ -64,9 +64,9 @@ Application language codes remain `en` and `hi`; adapters convert to vendor code
 
 GPU placement is an experiment. Start by benchmarking each stage alone. Evaluate ASR on GPU with translation and TTS on CPU as one composition candidate; evaluate GPU translation separately if CPU latency is excessive. Measure all resident models together before selecting defaults. Low parameter counts do not establish total runtime memory.
 
-Keep chosen models loaded for a warm interactive session only if memory gates pass. If explicit CPU placement, smaller ASR such as `base`, or staged loading is needed, record its quality and latency cost. Staged loading adds model load time to each affected response and must appear in end-to-end timing. Catch out-of-memory errors cleanly; do not repeatedly retry an impossible allocation.
+Keep chosen models loaded for a warm interactive session while evaluating measured stability and the dedicated-VRAM ceiling. Under [ADR-014](DECISIONS.md#adr-014--advisory-ram-reserve-and-measured-session-stability), available system RAM below 1 GiB is advisory and alone must not prevent the session. Record warnings and memory/latency trends; require the 30-turn microphone stability evidence before acceptance. If explicit CPU placement, smaller ASR such as `base`, or staged loading is needed, record its quality and latency cost. Staged loading adds model load time to each affected response and must appear in end-to-end timing. Catch out-of-memory errors cleanly; do not repeatedly retry an impossible allocation.
 
-The CLI enforces the sampled resident-memory gate after loading real providers for `listen`; failed or incomplete telemetry closes them before capture. File/stage/composed diagnostic commands remain available to measure explicit candidates that have not passed this gate.
+The CLI implements ADR-014: after loading and each utterance, `listen` records a memory check and emits one low-RAM warning without blocking solely on available RAM below 1 GiB. Excess dedicated VRAM or incomplete telemetry closes providers and prevents another capture/allocation attempt. Actual device/OOM errors remain explicit without fallback. File/stage/composed diagnostic commands remain available; no bypass option is needed.
 
 ## Proposed implementation layout
 
@@ -157,12 +157,14 @@ All elapsed measurements use monotonic time. GPU work must finish before stoppin
 | Meaning adequacy | Bilingual reviewer score, 1 incorrect to 5 complete meaning | Propose >= 90% of cases scoring >= 4 |
 | TTS intelligibility | Hindi listener score, 1 unintelligible to 5 easily understood | Propose >= 90% of cases scoring >= 4 using reviewed Hindi inputs |
 | Critical details | Preservation of negation, numbers, dates, and named entities | Review every applicable case; list every error rather than hiding it in averages |
-| Memory | Peak process RSS, total RAM/available RAM, total dedicated VRAM | Aim <= 3.5 GiB total dedicated VRAM and >= 1 GiB system RAM available |
+| Memory | Peak process RSS/private commit, total RAM/available RAM, total dedicated VRAM | <= 3.5 GiB total dedicated VRAM; available RAM <1 GiB is an advisory warning, not an automatic rejection (ADR-014) |
 | Reliability | Successful utterances / attempted utterances; categorized failures | No crash/OOM in 30 sequential microphone turns; report all skipped/failed cases |
 
 RTF is real-time factor: 0.5 means processing took half the duration of the audio. A fast stage alone does not guarantee a fast conversation. Response latency includes endpoint and playback delays and any model swapping. For file benchmarks use processing-start -> audio-ready timing; do not present it as measured microphone-to-audible latency.
 
 These numerical gates are proposed starting criteria, not prior experimental results. Revise them only through a documented decision with evidence. Stable local execution and adequate Hindi quality are required to call V1 complete; unmet latency goals must remain visible in the portfolio report.
+
+Assess session stability using crashes/OOM, all utterance outcomes, memory trends and latency across 30 sequential microphone turns. Keep startup/first-call and warm measurements separate and retain low-RAM warnings. Investigate sustained unexplained growth, allocation failures, hangs or material latency degradation before claiming stability. Passing unit tests or file p50/p95 does not complete this gate. Missing telemetry leaves evidence unverified. New reports identify `memory_policy: adr-014-ram-advisory` and separate `ram_advisory`, `vram_gate` and `telemetry_status`; their `memory_gate` covers VRAM/telemetry, not RAM reserve or session stability. Session `execution_gate` reports successful turns, while `stability_gate` remains pending memory/latency review. Historical reports without this policy field retain the legacy gate semantics.
 
 ## Audio behavior and validation
 
